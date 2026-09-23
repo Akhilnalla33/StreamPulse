@@ -1,0 +1,128 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      routes:
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/auth/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: authServiceCb
+                fallbackUri: forward:/fallback
+        - id: ingestion-service
+          uri: ${INGESTION_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/events/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: ingestionServiceCb
+                fallbackUri: forward:/fallback
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@tenantKeyResolver}"
+                redis-rate-limiter.replenishRate: 2
+                redis-rate-limiter.burstCapacity: 20
+                redis-rate-limiter.requestedTokens: 1
+        - id: rules-engine-service
+          uri: ${RULES_ENGINE_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/rules/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: rulesEngineServiceCb
+                fallbackUri: forward:/fallback
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@tenantKeyResolver}"
+                redis-rate-limiter.replenishRate: 2
+                redis-rate-limiter.burstCapacity: 20
+                redis-rate-limiter.requestedTokens: 1
+        - id: notification-service-rest
+          uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: notificationServiceCb
+                fallbackUri: forward:/fallback
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@tenantKeyResolver}"
+                redis-rate-limiter.replenishRate: 2
+                redis-rate-limiter.burstCapacity: 20
+                redis-rate-limiter.requestedTokens: 1
+        - id: notification-service-ws
+          uri: ${NOTIFICATION_SERVICE_WS_URL:ws://localhost:8084}
+          predicates:
+            - Path=/ws/**
+        - id: notification-service-sse
+          uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/sse/**
+
+streampulse:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-secret-key-please-override-in-prod-min-32-bytes!!}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      authServiceCb:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+      ingestionServiceCb:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+      rulesEngineServiceCb:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+      notificationServiceCb:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+  timelimiter:
+    instances:
+      authServiceCb:
+        timeoutDuration: 4s
+      ingestionServiceCb:
+        timeoutDuration: 4s
+      rulesEngineServiceCb:
+        timeoutDuration: 4s
+      notificationServiceCb:
+        timeoutDuration: 4s
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
