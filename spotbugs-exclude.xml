@@ -1,0 +1,24 @@
+<FindBugsFilter>
+    <!--
+        EI_EXPOSE_REP/REP2 fire on nearly every constructor-injected Spring singleton bean
+        (repositories, templates, mappers) and every DTO/record field, which is the standard,
+        intentional idiom in this codebase rather than a defect. Suppressed globally; real
+        aliasing bugs (unintentionally shared mutable state) are still caught by the unit and
+        integration tests.
+    -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <!--
+        CT_CONSTRUCTOR_THROW flags any constructor that can throw (e.g. JwtVerifier's key
+        parsing, JPA entity validation) as a theoretical finalizer-attack vector. None of these
+        classes declare a finalizer and the JVM's finalization mechanism is deprecated for
+        removal, so this is not an exploitable risk here.
+    -->
+    <Match>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <Match>
+        <Class name="~.*Application"/>
+    </Match>
+</FindBugsFilter>

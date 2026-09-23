@@ -1,0 +1,145 @@
+### StreamPulse API collection (IntelliJ HTTP Client / VS Code REST Client compatible)
+### All requests go through api-gateway on :8080 except where noted.
+### Run "Register tenant" and "Login" first and copy the returned accessToken into
+### the @accessToken variable below to exercise the authenticated requests.
+
+@gateway = http://localhost:8080
+@accessToken = REPLACE_WITH_ACCESS_TOKEN_FROM_LOGIN
+@refreshToken = REPLACE_WITH_REFRESH_TOKEN_FROM_LOGIN
+@ruleId = REPLACE_WITH_RULE_ID
+
+
+### ============================== auth-service ==============================
+
+### Register a new tenant + its first ADMIN user
+POST {{gateway}}/api/v1/auth/register-tenant
+Content-Type: application/json
+
+{
+  "tenantName": "Acme Corp",
+  "tenantSlug": "acme",
+  "adminEmail": "admin@acme.io",
+  "adminPassword": "SuperSecret123"
+}
+
+### Login
+POST {{gateway}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@acme.io",
+  "password": "SuperSecret123",
+  "tenantSlug": "acme"
+}
+
+### Refresh (rotates the refresh token; the old one becomes unusable)
+POST {{gateway}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+
+### =========================== ingestion-service =============================
+
+### Ingest a CPU usage event (requires ADMIN or MEMBER role)
+POST {{gateway}}/api/v1/events
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "source": "web-01",
+  "type": "CPU_USAGE",
+  "metricName": "cpu.usage.percent",
+  "value": 97.4,
+  "attributes": {
+    "region": "us-east-1"
+  }
+}
+
+### Ingest an error-rate event that should breach a rule
+POST {{gateway}}/api/v1/events
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "source": "checkout-service",
+  "type": "ERROR_RATE",
+  "metricName": "error.rate",
+  "value": 12.5
+}
+
+
+### ========================= rules-engine-service ============================
+
+### Create an alert rule (requires ADMIN)
+POST {{gateway}}/api/v1/rules
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "name": "High CPU usage",
+  "metricName": "cpu.usage.percent",
+  "comparator": "GREATER_THAN",
+  "threshold": 90.0,
+  "severity": "CRITICAL",
+  "enabled": true
+}
+
+### List all rules for the caller's tenant
+GET {{gateway}}/api/v1/rules
+Authorization: Bearer {{accessToken}}
+
+### Get a single rule
+GET {{gateway}}/api/v1/rules/{{ruleId}}
+Authorization: Bearer {{accessToken}}
+
+### Update a rule (requires ADMIN)
+PUT {{gateway}}/api/v1/rules/{{ruleId}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "name": "High CPU usage (revised)",
+  "metricName": "cpu.usage.percent",
+  "comparator": "GREATER_THAN",
+  "threshold": 85.0,
+  "severity": "CRITICAL",
+  "enabled": true
+}
+
+### Delete a rule (requires ADMIN)
+DELETE {{gateway}}/api/v1/rules/{{ruleId}}
+Authorization: Bearer {{accessToken}}
+
+
+### ========================= notification-service ============================
+
+### Paged notification history for the caller's tenant
+GET {{gateway}}/api/v1/notifications?page=0&size=20
+Authorization: Bearer {{accessToken}}
+
+### SSE fallback stream (open in a browser or an SSE-aware client; curl -N also works)
+GET {{gateway}}/sse/notifications
+Authorization: Bearer {{accessToken}}
+
+### WebSocket (not expressible as a plain HTTP request):
+### ws://localhost:8080/ws/notifications
+### Connect with a WebSocket client and pass the same bearer token via the gateway,
+### which forwards X-Tenant-Id/X-User-Id/X-User-Roles on the upgrade request.
+
+
+### ============================== actuator / docs =============================
+
+### Health check for any service, e.g. api-gateway itself
+GET {{gateway}}/actuator/health
+
+### OpenAPI docs (per service, direct port — not proxied through the gateway)
+GET http://localhost:8081/v3/api-docs
+###
+GET http://localhost:8082/v3/api-docs
+###
+GET http://localhost:8083/v3/api-docs
+###
+GET http://localhost:8084/v3/api-docs
